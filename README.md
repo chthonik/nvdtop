@@ -2,34 +2,6 @@
 
 A terminal-based resource monitor that maps GPU VRAM, CPU, and memory usage to individual Docker containers. Think `htop` meets `nvidia-smi`, but focused on showing exactly how much each container is consuming.
 
-Unlike general-purpose monitors like `glances`, `nvtop`, or `nvitop` that show process-level GPU usage, **nvdtop** resolves GPU processes back to their Docker containers — so you can see at a glance that your LLM inference container is using 9GB of VRAM out of 16GB, your whisper container has 138MB, and everything else is clean.
-
-## Screenshot
-
-```
-╭──────────────────────────────── System Host ─────────────────────────────────╮
-│   CPU:  [========>                ]  34.2%  (12 cores, load 0.8/0.5/1.0)     │
-│   RAM:  10G / 15G  [=================>       ]  70.0%                        │
-│   Swap: 60M / 4.0G  [>                        ]   1.5%                       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-╭─────────── GPU 0: NVIDIA GeForce RTX 5060 Ti ────────────╮
-│   VRAM: 9.2G / 15.9G  [==============>          ]  57.5% │
-│   Util: [>                        ]   0.0%               │
-│   Temp: 32°C                                             │
-│   Processes: 3                                           │
-╰──────────────────────────────────────────────────────────╯
-
-                        Docker Container Resources
-  Container        Image           Status   CPU   Mem Used/Limit  Mem%  VRAM Used/Total  VRAM%
- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  openclaw-llama   ghcr.io/ggml…   UP(!)   0.0%   2.1G/15G  14.3%   9.0G/15.9G   56.8%
-  openclaw-whis…   fedirz/faste…    UP     0.2%   545M/15G   3.5%   138M/15.9G    0.8%
-  openclaw-koko…   zacksock/kok…    UP     0.1%   1.7G/15G  11.2%           -        -
-  supabase-db      supabase/pos…   UP(+)   2.2%   145M/15G   1.0%           -        -
-  portainer        portainer/po…    UP     0.0%    47M/15G   0.3%           -        -
-```
-
 ## Features
 
 - **Per-container VRAM tracking** — maps `nvidia-smi` GPU processes to Docker containers via cgroup PID inspection
