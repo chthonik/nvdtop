@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nvdtop"
+version = "0.1.0"
+description = "Terminal resource monitor for Docker containers with GPU/VRAM tracking"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.0",
+    "docker>=7.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+nvdtop = "nvdtop.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
