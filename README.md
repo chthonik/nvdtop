@@ -20,8 +20,10 @@ A terminal-based resource monitor that maps GPU VRAM, CPU, and memory usage to i
 ```bash
 git clone https://github.com/chthonik/nvdtop.git
 cd nvdtop
-pip install -e .
+pip install .
 ```
+
+> **Tip:** For development, use `pip install -e .` (editable mode). This requires pip 21.3+ — run `pip install --upgrade pip` first if you get a `build_editable` error.
 
 ### Requirements
 
