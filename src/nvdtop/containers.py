@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import docker
 from docker.errors import APIError, NotFound
@@ -17,6 +18,10 @@ class ContainerStats:
     image: str
     status: str  # running, exited, paused, restarting, created, dead
     health: str | None  # healthy, unhealthy, starting, none
+    # Metadata
+    compose_project: str | None = None
+    restart_count: int = 0
+    started_at: datetime | None = None
     # CPU
     cpu_usage_pct: float = 0.0
     cpu_count: int = 0
@@ -35,6 +40,7 @@ class ContainerStats:
     # GPU (filled in later)
     gpu_procs: list = field(default_factory=list)
     gpu_mem_used_mib: int = 0
+    gpu_indices: list[int] = field(default_factory=list)
 
 
 def list_containers(
@@ -57,6 +63,16 @@ def list_containers(
         if health_obj:
             health = health_obj.get("Status")
 
+        # Compose project from labels
+        labels = c.labels or {}
+        compose_project = labels.get("com.docker.compose.project")
+
+        # Restart count
+        restart_count = c.attrs.get("RestartCount", 0)
+
+        # Started at
+        started_at = _parse_docker_time(state.get("StartedAt"))
+
         results.append(ContainerStats(
             container_id=c.id,
             short_id=c.short_id,
@@ -64,6 +80,9 @@ def list_containers(
             image=_image_tag(c),
             status=c.status,
             health=health,
+            compose_project=compose_project,
+            restart_count=restart_count,
+            started_at=started_at,
         ))
     return results
 
@@ -128,3 +147,37 @@ def _image_tag(c) -> str:
     if tags:
         return tags[0]
     return c.attrs.get("Config", {}).get("Image", "unknown")
+
+
+def _parse_docker_time(s: str | None) -> datetime | None:
+    """Parse Docker's ISO 8601 timestamp."""
+    if not s or s.startswith("0001"):
+        return None
+    try:
+        # Docker uses format like 2024-01-15T10:30:00.123456789Z
+        # Truncate nanoseconds to microseconds
+        s = re.sub(r"(\.\d{6})\d+", r"\1", s)
+        s = s.replace("Z", "+00:00")
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def format_uptime(started_at: datetime | None) -> str:
+    """Format uptime as a compact human-readable string."""
+    if started_at is None:
+        return "-"
+    delta = datetime.now(timezone.utc) - started_at
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        return "-"
+
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+
+    if days > 0:
+        return f"{days}d {hours}h"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"

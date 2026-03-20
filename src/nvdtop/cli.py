@@ -12,7 +12,7 @@ import docker
 from rich.console import Console
 from rich.live import Live
 
-from .containers import ContainerStats, list_containers, fetch_live_stats
+from .containers import ContainerStats, list_containers, fetch_live_stats, format_uptime
 from .gpu import query_nvidia_smi, map_gpu_to_containers, GpuInfo
 from .display import render, build_gpu_panels, build_container_table, build_system_panel
 from .system import query_system_stats
@@ -48,6 +48,7 @@ def _gather(
                 if cs.container_id.startswith(cid) or cid.startswith(cs.container_id[:12]):
                     cs.gpu_procs = procs
                     cs.gpu_mem_used_mib = sum(p.used_memory_mib for p in procs)
+                    cs.gpu_indices = list(sorted(set(p.gpu_index for p in procs)))
                     break
 
     return containers, gpus
@@ -232,11 +233,15 @@ def _output_json(
                 "image": c.image,
                 "status": c.status,
                 "health": c.health,
+                "compose_project": c.compose_project,
+                "restart_count": c.restart_count,
+                "uptime": format_uptime(c.started_at),
                 "cpu_pct": round(c.cpu_usage_pct, 2),
                 "mem_used_bytes": c.mem_used_bytes,
                 "mem_limit_bytes": c.mem_limit_bytes,
                 "mem_pct": round(c.mem_pct, 2),
                 "gpu_mem_used_mib": c.gpu_mem_used_mib,
+                "gpu_indices": c.gpu_indices,
                 "net_rx_bytes": c.net_rx_bytes,
                 "net_tx_bytes": c.net_tx_bytes,
                 "blk_read_bytes": c.blk_read_bytes,

@@ -9,7 +9,7 @@ from rich.columns import Columns
 from rich.text import Text
 from rich import box
 
-from .containers import ContainerStats
+from .containers import ContainerStats, format_uptime
 from .gpu import GpuInfo
 from .system import SystemStats
 
@@ -151,6 +151,93 @@ def build_gpu_panels(gpus: list[GpuInfo]) -> list[Panel]:
     return panels
 
 
+def _build_row(
+    c: ContainerStats,
+    gpus: list[GpuInfo],
+    total_gpu_mem: int,
+    show_all_columns: bool,
+) -> list:
+    """Build a single table row for a container."""
+    # Status cell
+    st_text = _short_status(c.status, c.health)
+    status_cell = Text(st_text, style=status_style(c.status, c.health))
+
+    # Uptime cell
+    uptime_text = Text(format_uptime(c.started_at), style="dim" if c.status != "running" else "")
+
+    # Restarts cell
+    if c.restart_count > 0:
+        restart_text = Text(str(c.restart_count), style="bold red" if c.restart_count >= 3 else "yellow")
+    else:
+        restart_text = Text("0", style="dim")
+
+    # CPU cell
+    if c.status == "running":
+        cpu_val = f"{c.cpu_usage_pct:.1f}%"
+        color = _pct_color(c.cpu_usage_pct)
+        cpu_text = Text(cpu_val, style=f"bold {color}" if c.cpu_usage_pct > 50 else "")
+    else:
+        cpu_text = Text("-", style="dim")
+
+    # Memory cells
+    if c.status == "running" and c.mem_limit_bytes > 0:
+        mem_frac = f"{format_bytes_short(c.mem_used_bytes)}/{format_bytes_short(c.mem_limit_bytes)}"
+        mem_frac_text = Text(mem_frac)
+        pct = c.mem_pct
+        color = _pct_color(pct)
+        mem_pct_text = Text(f"{pct:.1f}%", style=f"bold {color}")
+    else:
+        mem_frac_text = Text("-", style="dim")
+        mem_pct_text = Text("-", style="dim")
+
+    row: list = [c.name]
+    if show_all_columns:
+        row.append(c.image)
+    row.extend([status_cell, uptime_text, restart_text, cpu_text, mem_frac_text, mem_pct_text])
+
+    # GPU/VRAM cells
+    if gpus:
+        if c.gpu_mem_used_mib > 0 and total_gpu_mem > 0:
+            vram_frac = f"{format_mib(c.gpu_mem_used_mib)}/{format_mib(total_gpu_mem)}"
+            vram_pct = c.gpu_mem_used_mib / total_gpu_mem * 100
+            color = _pct_color(vram_pct)
+            row.append(Text(vram_frac))
+            row.append(Text(f"{vram_pct:.1f}%", style=f"bold {color}"))
+            # GPU index
+            if c.gpu_indices:
+                idx_str = ",".join(str(i) for i in sorted(set(c.gpu_indices)))
+                row.append(Text(idx_str))
+            else:
+                row.append(Text("-", style="dim"))
+        else:
+            row.append(Text("-", style="dim"))
+            row.append(Text("-", style="dim"))
+            row.append(Text("-", style="dim"))
+
+    if show_all_columns:
+        if c.status == "running":
+            row.append(f"{format_bytes_short(c.net_rx_bytes)}/{format_bytes_short(c.net_tx_bytes)}")
+            row.append(f"{format_bytes_short(c.blk_read_bytes)}/{format_bytes_short(c.blk_write_bytes)}")
+            row.append(str(c.pids))
+        else:
+            row.extend([Text("-", style="dim")] * 3)
+
+    return row
+
+
+def _sort_containers(containers: list[ContainerStats], sort_by: str) -> list[ContainerStats]:
+    """Sort containers by the given field."""
+    if sort_by == "gpu":
+        return sorted(containers, key=lambda c: c.gpu_mem_used_mib, reverse=True)
+    if sort_by == "cpu":
+        return sorted(containers, key=lambda c: c.cpu_usage_pct, reverse=True)
+    if sort_by == "mem":
+        return sorted(containers, key=lambda c: c.mem_used_bytes, reverse=True)
+    if sort_by == "name":
+        return sorted(containers, key=lambda c: c.name)
+    return containers
+
+
 def build_container_table(
     containers: list[ContainerStats],
     gpus: list[GpuInfo],
@@ -171,76 +258,53 @@ def build_container_table(
     )
 
     table.add_column("Container", style="bold", no_wrap=True, ratio=3)
-    table.add_column("Image", no_wrap=True, style="dim", ratio=3)
+    if show_all_columns:
+        table.add_column("Image", no_wrap=True, style="dim", ratio=3)
     table.add_column("Status", no_wrap=True, justify="center", ratio=1)
+    table.add_column("Uptime", no_wrap=True, justify="right", ratio=1)
+    table.add_column("R", no_wrap=True, justify="right", ratio=0)  # Restart count
     table.add_column("CPU", justify="right", no_wrap=True, ratio=1)
-    table.add_column("Mem Used/Limit", justify="right", no_wrap=True, ratio=2)
+    table.add_column("Mem Used/Lim", justify="right", no_wrap=True, ratio=2)
     table.add_column("Mem%", justify="right", no_wrap=True, ratio=1)
     if gpus:
-        table.add_column("VRAM Used/Total", justify="right", no_wrap=True, ratio=2)
+        table.add_column("VRAM Used/Tot", justify="right", no_wrap=True, ratio=2)
         table.add_column("VRAM%", justify="right", no_wrap=True, ratio=1)
+        table.add_column("GPU#", justify="right", no_wrap=True, ratio=0)
     if show_all_columns:
         table.add_column("Net I/O", justify="right", no_wrap=True, ratio=2)
         table.add_column("Blk I/O", justify="right", no_wrap=True, ratio=2)
         table.add_column("PIDs", justify="right", ratio=1)
 
-    # Sort
-    if sort_by == "gpu":
-        containers = sorted(containers, key=lambda c: c.gpu_mem_used_mib, reverse=True)
-    elif sort_by == "cpu":
-        containers = sorted(containers, key=lambda c: c.cpu_usage_pct, reverse=True)
-    elif sort_by == "mem":
-        containers = sorted(containers, key=lambda c: c.mem_used_bytes, reverse=True)
-    elif sort_by == "name":
-        containers = sorted(containers, key=lambda c: c.name)
-
+    # Group by compose project
+    projects: dict[str | None, list[ContainerStats]] = {}
     for c in containers:
-        # Status cell
-        st_text = _short_status(c.status, c.health)
-        status_cell = Text(st_text, style=status_style(c.status, c.health))
+        projects.setdefault(c.compose_project, []).append(c)
 
-        # CPU cell
-        if c.status == "running":
-            cpu_val = f"{c.cpu_usage_pct:.1f}%"
-            color = _pct_color(c.cpu_usage_pct)
-            cpu_text = Text(cpu_val, style=f"bold {color}" if c.cpu_usage_pct > 50 else "")
-        else:
-            cpu_text = Text("-", style="dim")
+    # Sort project groups: named projects first (alphabetically), then standalone (None)
+    sorted_keys = sorted(
+        (k for k in projects if k is not None),
+    ) + ([None] if None in projects else [])
 
-        # Memory cells
-        if c.status == "running" and c.mem_limit_bytes > 0:
-            mem_frac = f"{format_bytes_short(c.mem_used_bytes)}/{format_bytes_short(c.mem_limit_bytes)}"
-            mem_frac_text = Text(mem_frac)
-            pct = c.mem_pct
-            color = _pct_color(pct)
-            mem_pct_text = Text(f"{pct:.1f}%", style=f"bold {color}")
-        else:
-            mem_frac_text = Text("-", style="dim")
-            mem_pct_text = Text("-", style="dim")
+    first_group = True
+    for project in sorted_keys:
+        group = _sort_containers(projects[project], sort_by)
 
-        row: list = [c.name, c.image, status_cell, cpu_text, mem_frac_text, mem_pct_text]
+        if not first_group:
+            # Add a visual separator between groups
+            table.add_row()
 
-        # GPU/VRAM cells
-        if gpus:
-            if c.gpu_mem_used_mib > 0 and total_gpu_mem > 0:
-                vram_frac = f"{format_mib(c.gpu_mem_used_mib)}/{format_mib(total_gpu_mem)}"
-                vram_pct = c.gpu_mem_used_mib / total_gpu_mem * 100
-                color = _pct_color(vram_pct)
-                row.append(Text(vram_frac))
-                row.append(Text(f"{vram_pct:.1f}%", style=f"bold {color}"))
-            else:
-                row.append(Text("-", style="dim"))
-                row.append(Text("-", style="dim"))
+        if project is not None:
+            # Add project header row
+            table.add_row(
+                Text(f"[{project}]", style="bold magenta italic"),
+                *[""] * (len(table.columns) - 1),
+            )
 
-        if show_all_columns:
-            if c.status == "running":
-                row.append(f"{format_bytes_short(c.net_rx_bytes)}/{format_bytes_short(c.net_tx_bytes)}")
-                row.append(f"{format_bytes_short(c.blk_read_bytes)}/{format_bytes_short(c.blk_write_bytes)}")
-                row.append(str(c.pids))
-            else:
-                row.extend([Text("-", style="dim")] * 3)
+        for c in group:
+            row = _build_row(c, gpus, total_gpu_mem, show_all_columns)
+            table.add_row(*row)
 
-        table.add_row(*row)
+        first_group = False
 
     return table
 
