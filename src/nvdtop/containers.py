@@ -37,6 +37,8 @@ class ContainerStats:
     blk_write_bytes: int = 0
     # PIDs
     pids: int = 0
+    # Ports
+    ports: list[str] = field(default_factory=list)  # e.g. ["8880→8000", "443→443"]
     # GPU (filled in later)
     gpu_procs: list = field(default_factory=list)
     gpu_mem_used_mib: int = 0
@@ -73,6 +75,9 @@ def list_containers(
         # Started at
         started_at = _parse_docker_time(state.get("StartedAt"))
 
+        # Ports
+        ports = _parse_ports(c.attrs.get("NetworkSettings", {}).get("Ports", {}))
+
         results.append(ContainerStats(
             container_id=c.id,
             short_id=c.short_id,
@@ -83,6 +88,7 @@ def list_containers(
             compose_project=compose_project,
             restart_count=restart_count,
             started_at=started_at,
+            ports=ports,
         ))
     return results
 
@@ -142,10 +148,33 @@ def _parse_blkio(stats: dict, cs: ContainerStats) -> None:
             cs.blk_write_bytes += entry.get("value", 0)
 
 
+def _parse_ports(ports_dict: dict | None) -> list[str]:
+    """Parse Docker port bindings into compact strings like '8880→8000'."""
+    if not ports_dict:
+        return []
+    result = []
+    for container_port, bindings in sorted(ports_dict.items()):
+        # container_port is like "8000/tcp"
+        cport = container_port.split("/")[0]
+        if bindings:
+            for b in bindings:
+                hport = b.get("HostPort", "")
+                if hport and hport != cport:
+                    result.append(f"{hport}→{cport}")
+                elif hport:
+                    result.append(hport)
+        else:
+            result.append(cport)
+    return result
+
+
 def _image_tag(c) -> str:
-    tags = c.image.tags if c.image else []
-    if tags:
-        return tags[0]
+    try:
+        tags = c.image.tags if c.image else []
+        if tags:
+            return tags[0]
+    except (docker.errors.ImageNotFound, APIError):
+        pass
     return c.attrs.get("Config", {}).get("Image", "unknown")
 
 

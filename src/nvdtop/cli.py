@@ -235,6 +235,7 @@ def _output_json(
                 "health": c.health,
                 "compose_project": c.compose_project,
                 "restart_count": c.restart_count,
+                "ports": c.ports,
                 "uptime": format_uptime(c.started_at),
                 "cpu_pct": round(c.cpu_usage_pct, 2),
                 "mem_used_bytes": c.mem_used_bytes,

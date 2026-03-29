@@ -190,10 +190,13 @@ def _build_row(
         mem_frac_text = Text("-", style="dim")
         mem_pct_text = Text("-", style="dim")
 
+    # Ports cell
+    ports_text = Text(", ".join(c.ports) if c.ports else "-", style="dim" if not c.ports else "")
+
     row: list = [c.name]
     if show_all_columns:
         row.append(c.image)
-    row.extend([status_cell, uptime_text, restart_text, cpu_text, mem_frac_text, mem_pct_text])
+    row.extend([status_cell, ports_text, uptime_text, restart_text, cpu_text, mem_frac_text, mem_pct_text])
 
     # GPU/VRAM cells
     if gpus:
@@ -261,6 +264,7 @@ def build_container_table(
     if show_all_columns:
         table.add_column("Image", no_wrap=True, style="dim", ratio=3)
     table.add_column("Status", no_wrap=True, justify="center", ratio=1)
+    table.add_column("Ports", no_wrap=True, style="cyan", ratio=2)
     table.add_column("Uptime", no_wrap=True, justify="right", ratio=1)
     table.add_column("R", no_wrap=True, justify="right", ratio=0)  # Restart count
     table.add_column("CPU", justify="right", no_wrap=True, ratio=1)
